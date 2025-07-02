@@ -440,6 +440,81 @@ async def send_chat_request(request_body, request_headers):
     return response, apim_request_id
 
 
+async def send_assistant_request(request_body, request_headers):
+    messages = request_body.get("messages", [])
+    thread_id = request_body.get("thread_id")
+
+    if not messages:
+        raise ValueError("No messages provided")
+
+    user_message = messages[-1]
+    if user_message.get("role") != "user":
+        raise ValueError("Last message must be from user")
+
+    try:
+        azure_openai_client = await init_openai_client()
+
+        if not thread_id:
+            thread = await azure_openai_client.beta.threads.create()
+            thread_id = thread.id
+
+        await azure_openai_client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message["content"],
+        )
+
+        run = await azure_openai_client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=app_settings.azure_openai.assistant_id,
+        )
+
+        while True:
+            run_status = await azure_openai_client.beta.threads.runs.retrieve(
+                thread_id=thread_id, run_id=run.id
+            )
+            if run_status.status in ["queued", "in_progress", "cancelling"]:
+                await asyncio.sleep(0.5)
+                continue
+            break
+
+        if run_status.status != "completed":
+            raise Exception(f"Run failed with status {run_status.status}")
+
+        msgs = await azure_openai_client.beta.threads.messages.list(
+            thread_id=thread_id, order="desc", limit=1
+        )
+
+        assistant_msg = None
+        for msg in msgs.data:
+            if msg.role == "assistant":
+                assistant_msg = msg
+                break
+
+        if not assistant_msg:
+            raise Exception("No assistant message returned")
+
+        text_content = ""
+        for part in assistant_msg.content:
+            if part.type == "text":
+                text_content += part.text.value
+
+        response = {
+            "id": assistant_msg.id,
+            "model": app_settings.azure_openai.model,
+            "created": assistant_msg.created_at,
+            "object": assistant_msg.object,
+            "thread_id": thread_id,
+            "choices": [{"messages": [{"role": "assistant", "content": text_content}]}],
+        }
+
+        return response, None
+
+    except Exception as e:
+        logging.exception("Exception in send_assistant_request")
+        raise e
+
+
 async def complete_chat_request(request_body, request_headers):
     if app_settings.base_settings.use_promptflow:
         response = await promptflow_request(request_body)
@@ -451,6 +526,10 @@ async def complete_chat_request(request_body, request_headers):
             app_settings.promptflow.citations_field_name
         )
     else:
+        if app_settings.azure_openai.assistant_id:
+            response, _ = await send_assistant_request(request_body, request_headers)
+            return response
+
         response, apim_request_id = await send_chat_request(request_body, request_headers)
         history_metadata = request_body.get("history_metadata", {})
         non_streaming_response = format_non_streaming_response(response, history_metadata, apim_request_id)
@@ -564,7 +643,11 @@ async def stream_chat_request(request_body, request_headers):
 
 async def conversation_internal(request_body, request_headers):
     try:
-        if app_settings.azure_openai.stream and not app_settings.base_settings.use_promptflow:
+        if (
+            app_settings.azure_openai.stream
+            and not app_settings.base_settings.use_promptflow
+            and not app_settings.azure_openai.assistant_id
+        ):
             result = await stream_chat_request(request_body, request_headers)
             response = await make_response(format_as_ndjson(result))
             response.timeout = None

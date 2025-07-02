@@ -201,7 +201,8 @@ const Chat = () => {
         id: conversationId ?? uuid(),
         title: question as string,
         messages: [userMessage],
-        date: new Date().toISOString()
+        date: new Date().toISOString(),
+        thread_id: undefined
       }
     } else {
       conversation = appStateContext?.state?.currentChat
@@ -220,7 +221,8 @@ const Chat = () => {
     setMessages(conversation.messages)
 
     const request: ConversationRequest = {
-      messages: [...conversation.messages.filter(answer => answer.role !== ERROR)]
+      messages: [...conversation.messages.filter(answer => answer.role !== ERROR)],
+      thread_id: conversation.thread_id
     }
 
     let result = {} as ChatResponse
@@ -242,6 +244,9 @@ const Chat = () => {
               if (obj !== '' && obj !== '{}') {
                 runningText += obj
                 result = JSON.parse(runningText)
+                if (result.thread_id && !conversation.thread_id) {
+                  conversation.thread_id = result.thread_id
+                }
                 if (result.choices?.length > 0) {
                   result.choices[0].messages.forEach(msg => {
                     msg.id = result.id

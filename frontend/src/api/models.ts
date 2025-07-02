@@ -59,6 +59,7 @@ export type Conversation = {
   title: string
   messages: ChatMessage[]
   date: string
+  thread_id?: string
 }
 
 export enum ChatCompletionType {
@@ -81,11 +82,13 @@ export type ChatResponse = {
     title: string
     date: string
   }
+  thread_id?: string
   error?: any
 }
 
 export type ConversationRequest = {
   messages: ChatMessage[]
+  thread_id?: string
 }
 
 export type UserInfo = {
