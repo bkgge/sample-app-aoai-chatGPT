@@ -89,6 +89,7 @@ export type ChatResponse = {
 export type ConversationRequest = {
   messages: ChatMessage[]
   thread_id?: string
+  assistant_id?: string
 }
 
 export type UserInfo = {
