@@ -443,8 +443,10 @@ async def send_chat_request(request_body, request_headers):
 async def send_assistant_request(request_body, request_headers):
     messages = request_body.get("messages", [])
     thread_id = request_body.get("thread_id")
+    assistant_id = request_body.get("assistant_id") or app_settings.azure_openai.assistant_id
     logging.debug(
-        f"Assistant ID from settings: {app_settings.azure_openai.assistant_id}"
+        f"Assistant ID from settings: {app_settings.azure_openai.assistant_id}; using {assistant_id}"
+
     )
 
     if not messages:
@@ -470,7 +472,10 @@ async def send_assistant_request(request_body, request_headers):
 
         run = await azure_openai_client.beta.threads.runs.create(
             thread_id=thread_id,
-            assistant_id=app_settings.azure_openai.assistant_id,
+            assistant_id=assistant_id,
+        )
+        logging.debug(
+            f"Created run {run.id} on thread {thread_id} with assistant ID {assistant_id}"
         )
         logging.debug(
             f"Created run {run.id} on thread {thread_id} with assistant ID {app_settings.azure_openai.assistant_id}"
@@ -533,7 +538,7 @@ async def complete_chat_request(request_body, request_headers):
             app_settings.promptflow.citations_field_name
         )
     else:
-        if app_settings.azure_openai.assistant_id:
+        if request_body.get("assistant_id") or app_settings.azure_openai.assistant_id:
             response, _ = await send_assistant_request(request_body, request_headers)
             return response
 
@@ -651,7 +656,7 @@ async def stream_chat_request(request_body, request_headers):
 async def conversation_internal(request_body, request_headers):
     try:
         logging.debug(
-            f"conversation_internal using assistant ID: {app_settings.azure_openai.assistant_id}"
+            f"conversation_internal using assistant ID: {request_body.get('assistant_id') or app_settings.azure_openai.assistant_id}"
         )
         if (
             app_settings.azure_openai.stream
@@ -690,6 +695,17 @@ def get_frontend_settings():
         return jsonify(frontend_settings), 200
     except Exception as e:
         logging.exception("Exception in /frontend_settings")
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route("/assistants", methods=["GET"])
+async def list_assistants():
+    try:
+        client = await init_openai_client()
+        assistants = await client.beta.assistants.list()
+        return jsonify([{"id": a.id, "name": a.name or ""} for a in assistants.data]), 200
+    except Exception as e:
+        logging.exception("Exception in /assistants")
         return jsonify({"error": str(e)}), 500
 
 
