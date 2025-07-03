@@ -85,6 +85,14 @@ const Chat = () => {
     }
   }, [useAssistant])
 
+  useEffect(() => {
+    if (useAssistant && messages.length === 0) {
+      appStateContext?.state.isCosmosDBAvailable?.cosmosDB
+        ? makeApiRequestWithCosmosDB('')
+        : makeApiRequestWithoutCosmosDB('')
+    }
+  }, [useAssistant])
+
   const errorDialogContentProps = {
     type: DialogType.close,
     title: errorMsg?.title,
@@ -664,6 +672,11 @@ const Chat = () => {
     setRetryMessage(null)
     appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: null })
     setProcessMessages(messageStatus.Done)
+    if (useAssistant) {
+      appStateContext?.state.isCosmosDBAvailable?.cosmosDB
+        ? makeApiRequestWithCosmosDB('')
+        : makeApiRequestWithoutCosmosDB('')
+    }
   }
 
   const stopGenerating = () => {
