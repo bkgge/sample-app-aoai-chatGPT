@@ -538,7 +538,7 @@ async def complete_chat_request(request_body, request_headers):
             app_settings.promptflow.citations_field_name
         )
     else:
-        if request_body.get("assistant_id") or app_settings.azure_openai.assistant_id:
+        if request_body.get("assistant_id"):
             response, _ = await send_assistant_request(request_body, request_headers)
             return response
 
@@ -661,7 +661,7 @@ async def conversation_internal(request_body, request_headers):
         if (
             app_settings.azure_openai.stream
             and not app_settings.base_settings.use_promptflow
-            and not app_settings.azure_openai.assistant_id
+            and not request_body.get("assistant_id")
         ):
             result = await stream_chat_request(request_body, request_headers)
             response = await make_response(format_as_ndjson(result))
