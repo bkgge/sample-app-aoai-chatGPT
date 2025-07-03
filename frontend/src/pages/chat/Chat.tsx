@@ -220,10 +220,15 @@ const Chat = () => {
     appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: conversation })
     setMessages(conversation.messages)
 
-    const request: ConversationRequest = {
-      messages: [...conversation.messages.filter(answer => answer.role !== ERROR)],
-      thread_id: conversation.thread_id
-    }
+    const request: ConversationRequest = conversation.thread_id
+      ? {
+          messages: [userMessage],
+          thread_id: conversation.thread_id
+        }
+      : {
+          messages: [...conversation.messages.filter(answer => answer.role !== ERROR)],
+          thread_id: conversation.thread_id
+        }
 
     let result = {} as ChatResponse
     try {
