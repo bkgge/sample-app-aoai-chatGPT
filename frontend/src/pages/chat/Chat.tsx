@@ -250,7 +250,6 @@ const Chat = () => {
       : {
           messages: [...conversation.messages.filter(answer => answer.role !== ERROR)],
           thread_id: conversation.thread_id,
-          assistant_id: useAssistant ? selectedAssistant : null
         }
 
     let result = {} as ChatResponse
@@ -272,7 +271,7 @@ const Chat = () => {
               if (obj !== '' && obj !== '{}') {
                 runningText += obj
                 result = JSON.parse(runningText)
-                if (result.thread_id && !conversation.thread_id) {
+                if (result.thread_id && conversation && !conversation.thread_id) {
                   conversation.thread_id = result.thread_id
                 }
                 if (result.choices?.length > 0) {
