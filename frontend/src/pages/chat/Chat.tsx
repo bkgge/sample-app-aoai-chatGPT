@@ -168,7 +168,11 @@ const Chat = () => {
     appStateContext?.dispatch({ type: 'SET_ANSWER_EXEC_RESULT', payload: { answerId: answerId, exec_result: exec_results } })
   }
 
-  const processResultMessage = (resultMessage: ChatMessage, userMessage: ChatMessage, conversationId?: string) => {
+  const processResultMessage = (
+    resultMessage: ChatMessage,
+    userMessage?: ChatMessage | null,
+    conversationId?: string
+  ) => {
     if (typeof resultMessage.content === "string" && resultMessage.content.includes('all_exec_results')) {
       const parsedExecResults = JSON.parse(resultMessage.content) as AzureSqlServerExecResults
       setExecResults(parsedExecResults.all_exec_results)
@@ -197,8 +201,12 @@ const Chat = () => {
 
     if (!conversationId) {
       isEmpty(toolMessage)
-        ? setMessages([...messages, userMessage, assistantMessage])
-        : setMessages([...messages, userMessage, toolMessage, assistantMessage])
+        ? userMessage
+          ? setMessages([...messages, userMessage, assistantMessage])
+          : setMessages([...messages, assistantMessage])
+        : userMessage
+          ? setMessages([...messages, userMessage, toolMessage, assistantMessage])
+          : setMessages([...messages, toolMessage, assistantMessage])
     } else {
       isEmpty(toolMessage)
         ? setMessages([...messages, assistantMessage])
@@ -213,15 +221,18 @@ const Chat = () => {
     const abortController = new AbortController()
     abortFuncs.current.unshift(abortController)
 
-    const questionContent = typeof question === 'string' ? question : [{ type: "text", text: question[0].text }, { type: "image_url", image_url: { url: question[1].image_url.url } }]
+    const questionContent = typeof question === 'string' ? question : [{ type: 'text', text: question[0].text }, { type: 'image_url', image_url: { url: question[1].image_url.url } }]
     question = typeof question !== 'string' && question[0]?.text?.length > 0 ? question[0].text : question
 
-    const userMessage: ChatMessage = {
-      id: uuid(),
-      role: 'user',
-      content: questionContent as string,
-      date: new Date().toISOString()
-    }
+    const isFirstAssistant = question === ''
+    const userMessage: ChatMessage | null = isFirstAssistant
+      ? null
+      : {
+          id: uuid(),
+          role: 'user',
+          content: questionContent as string,
+          date: new Date().toISOString()
+        }
     setRetryMessage(userMessage)
 
     let conversation: Conversation | null | undefined
@@ -229,7 +240,7 @@ const Chat = () => {
       conversation = {
         id: conversationId ?? uuid(),
         title: question as string,
-        messages: [userMessage],
+        messages: userMessage ? [userMessage] : [],
         date: new Date().toISOString(),
         thread_id: undefined
       }
@@ -241,7 +252,7 @@ const Chat = () => {
         setShowLoadingMessage(false)
         abortFuncs.current = abortFuncs.current.filter(a => a !== abortController)
         return
-      } else {
+      } else if (userMessage) {
         conversation.messages.push(userMessage)
       }
     }
@@ -251,7 +262,7 @@ const Chat = () => {
 
     const request: ConversationRequest = conversation.thread_id
       ? {
-          messages: [userMessage],
+          messages: userMessage ? [userMessage] : [],
           thread_id: conversation.thread_id,
           assistant_id: useAssistant ? selectedAssistant : undefined
         }
@@ -310,10 +321,15 @@ const Chat = () => {
             }
           })
         }
-        conversation.messages.push(toolMessage, assistantMessage)
+        if (!isEmpty(toolMessage)) {
+          conversation.messages.push(toolMessage)
+        }
+        conversation.messages.push(assistantMessage)
         setLastResponseTime(((Date.now() - start)/1000).toFixed(1) + 's')
         appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: conversation })
-        setMessages([...messages, toolMessage, assistantMessage])
+        isEmpty(toolMessage)
+          ? setMessages([...messages, assistantMessage])
+          : setMessages([...messages, toolMessage, assistantMessage])
       }
     } catch (e) {
       if (!abortController.signal.aborted) {
@@ -336,7 +352,7 @@ const Chat = () => {
         conversation.messages.push(errorChatMsg)
         appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: conversation })
         setMessages([...messages, errorChatMsg])
-      } else {
+      } else if (userMessage) {
         setMessages([...messages, userMessage])
       }
     } finally {
@@ -355,15 +371,18 @@ const Chat = () => {
     const start = Date.now()
     const abortController = new AbortController()
     abortFuncs.current.unshift(abortController)
-    const questionContent = typeof question === 'string' ? question : [{ type: "text", text: question[0].text }, { type: "image_url", image_url: { url: question[1].image_url.url } }]
+    const questionContent = typeof question === 'string' ? question : [{ type: 'text', text: question[0].text }, { type: 'image_url', image_url: { url: question[1].image_url.url } }]
     question = typeof question !== 'string' && question[0]?.text?.length > 0 ? question[0].text : question
 
-    const userMessage: ChatMessage = {
-      id: uuid(),
-      role: 'user',
-      content: questionContent as string,
-      date: new Date().toISOString()
-    }
+    const isFirstAssistant = question === ''
+    const userMessage: ChatMessage | null = isFirstAssistant
+      ? null
+      : {
+          id: uuid(),
+          role: 'user',
+          content: questionContent as string,
+          date: new Date().toISOString()
+        }
     setRetryMessage(userMessage)
 
     let request: ConversationRequest
@@ -376,8 +395,13 @@ const Chat = () => {
         setShowLoadingMessage(false)
         abortFuncs.current = abortFuncs.current.filter(a => a !== abortController)
         return
-      } else {
+      } else if (userMessage) {
         conversation.messages.push(userMessage)
+        request = {
+          messages: [...conversation.messages.filter(answer => answer.role !== ERROR)],
+          assistant_id: useAssistant ? selectedAssistant : undefined
+        }
+      } else {
         request = {
           messages: [...conversation.messages.filter(answer => answer.role !== ERROR)],
           assistant_id: useAssistant ? selectedAssistant : undefined
@@ -385,7 +409,7 @@ const Chat = () => {
       }
     } else {
       request = {
-        messages: [userMessage].filter(answer => answer.role !== ERROR),
+        messages: userMessage ? [userMessage].filter(answer => answer.role !== ERROR) : [],
         assistant_id: useAssistant ? selectedAssistant : undefined
       }
       setMessages(request.messages)
@@ -418,7 +442,7 @@ const Chat = () => {
           }
           resultConversation.messages.push(errorChatMsg)
         } else {
-          setMessages([...messages, userMessage, errorChatMsg])
+          setMessages(userMessage ? [...messages, userMessage, errorChatMsg] : [...messages, errorChatMsg])
           setIsLoading(false)
           setShowLoadingMessage(false)
           abortFuncs.current = abortFuncs.current.filter(a => a !== abortController)
@@ -492,7 +516,7 @@ const Chat = () => {
           resultConversation = {
             id: result.history_metadata.conversation_id,
             title: result.history_metadata.title,
-            messages: [userMessage],
+            messages: userMessage ? [userMessage] : [],
             date: result.history_metadata.date
           }
           isEmpty(toolMessage)
@@ -548,7 +572,7 @@ const Chat = () => {
               content: errorMessage,
               date: new Date().toISOString()
             }
-            setMessages([...messages, userMessage, errorChatMsg])
+            setMessages(userMessage ? [...messages, userMessage, errorChatMsg] : [...messages, errorChatMsg])
             setIsLoading(false)
             setShowLoadingMessage(false)
             abortFuncs.current = abortFuncs.current.filter(a => a !== abortController)
@@ -557,7 +581,7 @@ const Chat = () => {
           resultConversation = {
             id: result.history_metadata.conversation_id,
             title: result.history_metadata.title,
-            messages: [userMessage],
+            messages: userMessage ? [userMessage] : [],
             date: result.history_metadata.date
           }
           resultConversation.messages.push(errorChatMsg)
@@ -570,7 +594,7 @@ const Chat = () => {
         }
         appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: resultConversation })
         setMessages([...messages, errorChatMsg])
-      } else {
+      } else if (userMessage) {
         setMessages([...messages, userMessage])
       }
     } finally {
