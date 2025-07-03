@@ -10,7 +10,8 @@ export async function conversationApi(options: ConversationRequest, abortSignal:
     },
     body: JSON.stringify({
       messages: options.messages,
-      thread_id: options.thread_id
+      thread_id: options.thread_id,
+      assistant_id: options.assistant_id
     }),
     signal: abortSignal
   })
@@ -122,11 +123,13 @@ export const historyGenerate = async (
   if (convId) {
     body = JSON.stringify({
       conversation_id: convId,
-      messages: options.messages
+      messages: options.messages,
+      assistant_id: options.assistant_id
     })
   } else {
     body = JSON.stringify({
-      messages: options.messages
+      messages: options.messages,
+      assistant_id: options.assistant_id
     })
   }
   const response = await fetch('/history/generate', {
@@ -326,6 +329,18 @@ export const frontendSettings = async (): Promise<Response | null> => {
       return null
     })
 
+  return response
+}
+
+export const listAssistants = async (): Promise<{id: string, name: string}[] | null> => {
+  const response = await fetch('/assistants', {
+    method: 'GET'
+  })
+    .then(res => res.json())
+    .catch(_err => {
+      console.error('There was an issue fetching assistants.')
+      return null
+    })
   return response
 }
 export const historyMessageFeedback = async (messageId: string, feedback: string): Promise<Response> => {
