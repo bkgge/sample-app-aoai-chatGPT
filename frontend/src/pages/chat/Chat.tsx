@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useContext, useLayoutEffect } from 'react'
-import { CommandBarButton, IconButton, Dialog, DialogType, Stack } from '@fluentui/react'
+import { CommandBarButton, IconButton, Dialog, DialogType, Stack, Toggle, Dropdown, IDropdownOption } from '@fluentui/react'
 import { SquareRegular, ShieldLockRegular, ErrorCircleRegular } from '@fluentui/react-icons'
 
 import ReactMarkdown from 'react-markdown'
@@ -19,6 +19,7 @@ import {
   ChatMessage,
   ConversationRequest,
   conversationApi,
+  listAssistants,
   Citation,
   ToolMessageContent,
   AzureSqlServerExecResults,
@@ -65,6 +66,24 @@ const Chat = () => {
   const [errorMsg, setErrorMsg] = useState<ErrorMessage | null>()
   const [logo, setLogo] = useState('')
   const [answerId, setAnswerId] = useState<string>('')
+  const [useAssistant, setUseAssistant] = useState<boolean>(false)
+  const [assistants, setAssistants] = useState<IDropdownOption[]>([])
+  const [selectedAssistant, setSelectedAssistant] = useState<string>()
+  const [lastResponseTime, setLastResponseTime] = useState<string | null>(null)
+  const [retryMessage, setRetryMessage] = useState<ChatMessage | null>(null)
+
+  useEffect(() => {
+    if (useAssistant) {
+      listAssistants().then(res => {
+        if (res) {
+          setAssistants(res.map(a => ({ key: a.id, text: a.name || a.id })))
+          if (res.length > 0 && !selectedAssistant) {
+            setSelectedAssistant(res[0].id)
+          }
+        }
+      })
+    }
+  }, [useAssistant])
 
   const errorDialogContentProps = {
     type: DialogType.close,
@@ -182,6 +201,7 @@ const Chat = () => {
   const makeApiRequestWithoutCosmosDB = async (question: ChatMessage["content"], conversationId?: string) => {
     setIsLoading(true)
     setShowLoadingMessage(true)
+    const start = Date.now()
     const abortController = new AbortController()
     abortFuncs.current.unshift(abortController)
 
@@ -194,6 +214,7 @@ const Chat = () => {
       content: questionContent as string,
       date: new Date().toISOString()
     }
+    setRetryMessage(userMessage)
 
     let conversation: Conversation | null | undefined
     if (!conversationId) {
@@ -220,10 +241,17 @@ const Chat = () => {
     appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: conversation })
     setMessages(conversation.messages)
 
-    const request: ConversationRequest = {
-      messages: [...conversation.messages.filter(answer => answer.role !== ERROR)],
-      thread_id: conversation.thread_id
-    }
+    const request: ConversationRequest = conversation.thread_id
+      ? {
+          messages: [userMessage],
+          thread_id: conversation.thread_id,
+          assistant_id: useAssistant ? selectedAssistant : undefined
+        }
+      : {
+          messages: [...conversation.messages.filter(answer => answer.role !== ERROR)],
+          thread_id: conversation.thread_id,
+          assistant_id: useAssistant ? selectedAssistant : undefined
+        }
 
     let result = {} as ChatResponse
     try {
@@ -274,6 +302,7 @@ const Chat = () => {
           })
         }
         conversation.messages.push(toolMessage, assistantMessage)
+        setLastResponseTime(((Date.now() - start)/1000).toFixed(1) + 's')
         appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: conversation })
         setMessages([...messages, toolMessage, assistantMessage])
       }
@@ -314,6 +343,7 @@ const Chat = () => {
   const makeApiRequestWithCosmosDB = async (question: ChatMessage["content"], conversationId?: string) => {
     setIsLoading(true)
     setShowLoadingMessage(true)
+    const start = Date.now()
     const abortController = new AbortController()
     abortFuncs.current.unshift(abortController)
     const questionContent = typeof question === 'string' ? question : [{ type: "text", text: question[0].text }, { type: "image_url", image_url: { url: question[1].image_url.url } }]
@@ -325,6 +355,7 @@ const Chat = () => {
       content: questionContent as string,
       date: new Date().toISOString()
     }
+    setRetryMessage(userMessage)
 
     let request: ConversationRequest
     let conversation
@@ -339,12 +370,14 @@ const Chat = () => {
       } else {
         conversation.messages.push(userMessage)
         request = {
-          messages: [...conversation.messages.filter(answer => answer.role !== ERROR)]
+          messages: [...conversation.messages.filter(answer => answer.role !== ERROR)],
+          assistant_id: useAssistant ? selectedAssistant : undefined
         }
       }
     } else {
       request = {
-        messages: [userMessage].filter(answer => answer.role !== ERROR)
+        messages: [userMessage].filter(answer => answer.role !== ERROR),
+        assistant_id: useAssistant ? selectedAssistant : undefined
       }
       setMessages(request.messages)
     }
@@ -464,6 +497,7 @@ const Chat = () => {
           return
         }
         appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: resultConversation })
+        setLastResponseTime(((Date.now() - start)/1000).toFixed(1) + 's')
         isEmpty(toolMessage)
           ? setMessages([...messages, assistantMessage])
           : setMessages([...messages, toolMessage, assistantMessage])
@@ -625,6 +659,8 @@ const Chat = () => {
     setIsCitationPanelOpen(false)
     setIsIntentsPanelOpen(false)
     setActiveCitation(undefined)
+    setLastResponseTime(null)
+    setRetryMessage(null)
     appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: null })
     setProcessMessages(messageStatus.Done)
   }
@@ -794,6 +830,13 @@ const Chat = () => {
       ) : (
         <Stack horizontal className={styles.chatRoot}>
           <div className={styles.chatContainer}>
+            <Stack horizontal tokens={{ childrenGap: 10 }} styles={{ root: { marginBottom: 10 } }}>
+              <Toggle label="Use Assistant" checked={useAssistant} onChange={(_, v) => setUseAssistant(!!v)} />
+              {useAssistant && (
+                <Dropdown options={assistants} selectedKey={selectedAssistant} onChange={(_, o) => setSelectedAssistant(o?.key as string)} placeholder="Assistant" styles={{ dropdown: { width: 150 } }} />
+              )}
+              {lastResponseTime && <span>Time: {lastResponseTime}</span>}
+            </Stack>
             {!messages || messages.length < 1 ? (
               <Stack className={styles.chatEmptyState}>
                 <img src={logo} className={styles.chatIcon} aria-hidden="true" />
@@ -871,6 +914,21 @@ const Chat = () => {
                   </span>
                 </Stack>
               )}
+              {!isLoading && messages.length > 0 && messages[messages.length - 1].role === ERROR && (
+                <CommandBarButton
+                  role="button"
+                  styles={{ root: { background: '#F0F0F0', marginRight: '8px' } }}
+                  iconProps={{ iconName: 'Refresh' }}
+                  onClick={() => {
+                    if (retryMessage) {
+                      appStateContext?.state.isCosmosDBAvailable?.cosmosDB
+                        ? makeApiRequestWithCosmosDB(retryMessage.content, appStateContext?.state.currentChat?.id)
+                        : makeApiRequestWithoutCosmosDB(retryMessage.content, appStateContext?.state.currentChat?.id)
+                    }
+                  }}
+                  aria-label="retry last request"
+                />
+              )}
               <Stack>
                 {appStateContext?.state.isCosmosDBAvailable?.status !== CosmosDBStatus.NotConfigured && (
                   <CommandBarButton
@@ -929,6 +987,14 @@ const Chat = () => {
                   }
                   disabled={disabledButton()}
                   aria-label="clear chat button"
+                />
+                <CommandBarButton
+                  role="button"
+                  styles={{ root: { background: '#F0F0F0', marginLeft: '8px' } }}
+                  iconProps={{ iconName: 'Refresh' }}
+                  onClick={newChat}
+                  disabled={disabledButton()}
+                  aria-label="reset conversation"
                 />
                 <Dialog
                   hidden={hideErrorDialog}
