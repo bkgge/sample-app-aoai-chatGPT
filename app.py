@@ -446,6 +446,7 @@ async def send_assistant_request(request_body, request_headers):
     assistant_id = request_body.get("assistant_id") or app_settings.azure_openai.assistant_id
     logging.debug(
         f"Assistant ID from settings: {app_settings.azure_openai.assistant_id}; using {assistant_id}"
+
     )
 
     if not messages:
@@ -475,6 +476,9 @@ async def send_assistant_request(request_body, request_headers):
         )
         logging.debug(
             f"Created run {run.id} on thread {thread_id} with assistant ID {assistant_id}"
+        )
+        logging.debug(
+            f"Created run {run.id} on thread {thread_id} with assistant ID {app_settings.azure_openai.assistant_id}"
         )
 
         while True:

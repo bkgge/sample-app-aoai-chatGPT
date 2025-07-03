@@ -251,6 +251,7 @@ const Chat = () => {
           messages: [...conversation.messages.filter(answer => answer.role !== ERROR)],
           thread_id: conversation.thread_id,
           assistant_id: useAssistant ? selectedAssistant : undefined
+
         }
 
     let result = {} as ChatResponse
