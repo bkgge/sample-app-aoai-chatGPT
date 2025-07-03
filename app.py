@@ -449,11 +449,8 @@ async def send_assistant_request(request_body, request_headers):
 
     )
 
-    if not messages:
-        raise ValueError("No messages provided")
-
-    user_message = messages[-1]
-    if user_message.get("role") != "user":
+    user_message = messages[-1] if messages else None
+    if user_message and user_message.get("role") != "user":
         raise ValueError("Last message must be from user")
 
     try:
@@ -464,11 +461,12 @@ async def send_assistant_request(request_body, request_headers):
             thread_id = thread.id
             logging.debug(f"Created new thread: {thread_id}")
 
-        await azure_openai_client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_message["content"],
-        )
+        if user_message:
+            await azure_openai_client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=user_message["content"],
+            )
 
         run = await azure_openai_client.beta.threads.runs.create(
             thread_id=thread_id,
@@ -752,8 +750,6 @@ async def add_conversation():
                     + conversation_id
                     + "."
                 )
-        else:
-            raise Exception("No user message found")
 
         # Submit request to Chat Completions for response
         request_body = await request.get_json()
