@@ -443,6 +443,10 @@ async def send_chat_request(request_body, request_headers):
 async def send_assistant_request(request_body, request_headers):
     messages = request_body.get("messages", [])
     thread_id = request_body.get("thread_id")
+    assistant_id = request_body.get("assistant_id") or app_settings.azure_openai.assistant_id
+    logging.debug(
+        f"Assistant ID from settings: {app_settings.azure_openai.assistant_id}; using {assistant_id}"
+    )
 
     if not messages:
         raise ValueError("No messages provided")
@@ -457,6 +461,7 @@ async def send_assistant_request(request_body, request_headers):
         if not thread_id:
             thread = await azure_openai_client.beta.threads.create()
             thread_id = thread.id
+            logging.debug(f"Created new thread: {thread_id}")
 
         await azure_openai_client.beta.threads.messages.create(
             thread_id=thread_id,
@@ -466,7 +471,10 @@ async def send_assistant_request(request_body, request_headers):
 
         run = await azure_openai_client.beta.threads.runs.create(
             thread_id=thread_id,
-            assistant_id=app_settings.azure_openai.assistant_id,
+            assistant_id=assistant_id,
+        )
+        logging.debug(
+            f"Created run {run.id} on thread {thread_id} with assistant ID {assistant_id}"
         )
 
         while True:
@@ -526,7 +534,12 @@ async def complete_chat_request(request_body, request_headers):
             app_settings.promptflow.citations_field_name
         )
     else:
-        if app_settings.azure_openai.assistant_id:
+        if "assistant_id" in request_body:
+            if request_body["assistant_id"]:
+                response, _ = await send_assistant_request(request_body, request_headers)
+                return response
+        elif app_settings.azure_openai.assistant_id:
+            request_body["assistant_id"] = app_settings.azure_openai.assistant_id
             response, _ = await send_assistant_request(request_body, request_headers)
             return response
 
@@ -643,6 +656,9 @@ async def stream_chat_request(request_body, request_headers):
 
 async def conversation_internal(request_body, request_headers):
     try:
+        logging.debug(
+            f"conversation_internal assistant_id param: {request_body.get('assistant_id')}"
+        )
         if (
             app_settings.azure_openai.stream
             and not app_settings.base_settings.use_promptflow
@@ -680,6 +696,17 @@ def get_frontend_settings():
         return jsonify(frontend_settings), 200
     except Exception as e:
         logging.exception("Exception in /frontend_settings")
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route("/assistants", methods=["GET"])
+async def list_assistants():
+    try:
+        client = await init_openai_client()
+        assistants = await client.beta.assistants.list()
+        return jsonify([{"id": a.id, "name": a.name or ""} for a in assistants.data]), 200
+    except Exception as e:
+        logging.exception("Exception in /assistants")
         return jsonify({"error": str(e)}), 500
 
 
