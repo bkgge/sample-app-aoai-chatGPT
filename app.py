@@ -527,6 +527,65 @@ async def send_assistant_request(request_body, request_headers):
         raise e
 
 
+async def stream_assistant_request(request_body, request_headers):
+    messages = request_body.get("messages", [])
+    thread_id = request_body.get("thread_id")
+    assistant_id = request_body.get("assistant_id") or app_settings.azure_openai.assistant_id
+    logging.debug(
+        f"Assistant ID from settings: {app_settings.azure_openai.assistant_id}; using {assistant_id}"
+    )
+
+    if not messages:
+        raise ValueError("No messages provided")
+
+    user_message = messages[-1]
+    if user_message.get("role") != "user":
+        raise ValueError("Last message must be from user")
+
+    try:
+        azure_openai_client = await init_openai_client()
+
+        if not thread_id:
+            thread = await azure_openai_client.beta.threads.create()
+            thread_id = thread.id
+            logging.debug(f"Created new thread: {thread_id}")
+
+        await azure_openai_client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message["content"],
+        )
+
+        stream = await azure_openai_client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=assistant_id,
+            stream=True,
+        )
+
+        async def generate():
+            async for event in stream:
+                if hasattr(event, "event") and event.event == "thread.message.delta":
+                    delta = event.data.delta
+                    text = ""
+                    for part in delta.content:
+                        if part.type == "text":
+                            text += part.text.value
+                    if text:
+                        yield {
+                            "id": event.data.id,
+                            "model": app_settings.azure_openai.model,
+                            "created": event.data.created_at,
+                            "object": event.data.object,
+                            "thread_id": thread_id,
+                            "choices": [{"messages": [{"role": "assistant", "content": text}]}],
+                        }
+
+        return generate()
+    except Exception as e:
+        logging.exception("Exception in stream_assistant_request")
+        raise e
+
+
 async def complete_chat_request(request_body, request_headers):
     if app_settings.base_settings.use_promptflow:
         response = await promptflow_request(request_body)
@@ -661,9 +720,11 @@ async def conversation_internal(request_body, request_headers):
         if (
             app_settings.azure_openai.stream
             and not app_settings.base_settings.use_promptflow
-            and not request_body.get("assistant_id")
         ):
-            result = await stream_chat_request(request_body, request_headers)
+            if request_body.get("assistant_id"):
+                result = await stream_assistant_request(request_body, request_headers)
+            else:
+                result = await stream_chat_request(request_body, request_headers)
             response = await make_response(format_as_ndjson(result))
             response.timeout = None
             response.mimetype = "application/json-lines"
