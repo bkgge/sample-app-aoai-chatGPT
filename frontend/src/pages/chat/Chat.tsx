@@ -776,6 +776,12 @@ const Chat = () => {
     chatMessageStreamEnd.current?.scrollIntoView({ behavior: 'smooth' })
   }, [showLoadingMessage, processMessages])
 
+  useEffect(() => {
+    if (processMessages === messageStatus.Processing) {
+      chatMessageStreamEnd.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages])
+
   const onShowCitation = (citation: Citation) => {
     setActiveCitation(citation)
     setIsCitationPanelOpen(true)
