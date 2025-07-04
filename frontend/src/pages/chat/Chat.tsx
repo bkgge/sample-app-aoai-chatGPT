@@ -69,21 +69,35 @@ const Chat = () => {
   const [useAssistant, setUseAssistant] = useState<boolean>(false)
   const [assistants, setAssistants] = useState<IDropdownOption[]>([])
   const [selectedAssistant, setSelectedAssistant] = useState<string>()
-  const [lastResponseTime, setLastResponseTime] = useState<string | null>(null)
   const [retryMessage, setRetryMessage] = useState<ChatMessage | null>(null)
 
   useEffect(() => {
-    if (useAssistant) {
-      listAssistants().then(res => {
-        if (res) {
-          setAssistants(res.map(a => ({ key: a.id, text: a.name || a.id })))
-          if (res.length > 0 && !selectedAssistant) {
-            setSelectedAssistant(res[0].id)
-          }
-        }
-      })
+    const cached = sessionStorage.getItem('assistants')
+    if (cached) {
+      const parsed = JSON.parse(cached) as { id: string; name: string }[]
+      setAssistants(parsed.map(a => ({ key: a.id, text: a.name || a.id })))
+      if (parsed.length > 0) {
+        setSelectedAssistant(parsed[0].id)
+      }
+      return
     }
-  }, [useAssistant])
+
+    listAssistants().then(res => {
+      if (res) {
+        sessionStorage.setItem('assistants', JSON.stringify(res))
+        setAssistants(res.map(a => ({ key: a.id, text: a.name || a.id })))
+        if (res.length > 0) {
+          setSelectedAssistant(res[0].id)
+        }
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    if (useAssistant && assistants.length > 0 && !selectedAssistant) {
+      setSelectedAssistant(assistants[0].key as string)
+    }
+  }, [useAssistant, assistants, selectedAssistant])
 
   const errorDialogContentProps = {
     type: DialogType.close,
@@ -302,8 +316,9 @@ const Chat = () => {
             }
           })
         }
+        const responseTime = ((Date.now() - start) / 1000).toFixed(1) + 's'
+        assistantMessage.response_time = responseTime
         conversation.messages.push(toolMessage, assistantMessage)
-        setLastResponseTime(((Date.now() - start)/1000).toFixed(1) + 's')
         appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: conversation })
         setMessages([...messages, toolMessage, assistantMessage])
       }
@@ -497,8 +512,9 @@ const Chat = () => {
           abortFuncs.current = abortFuncs.current.filter(a => a !== abortController)
           return
         }
+        const responseTime = ((Date.now() - start) / 1000).toFixed(1) + 's'
+        assistantMessage.response_time = responseTime
         appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: resultConversation })
-        setLastResponseTime(((Date.now() - start)/1000).toFixed(1) + 's')
         isEmpty(toolMessage)
           ? setMessages([...messages, assistantMessage])
           : setMessages([...messages, toolMessage, assistantMessage])
@@ -660,7 +676,6 @@ const Chat = () => {
     setIsCitationPanelOpen(false)
     setIsIntentsPanelOpen(false)
     setActiveCitation(undefined)
-    setLastResponseTime(null)
     setRetryMessage(null)
     appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: null })
     setProcessMessages(messageStatus.Done)
@@ -836,7 +851,6 @@ const Chat = () => {
               {useAssistant && (
                 <Dropdown options={assistants} selectedKey={selectedAssistant} onChange={(_, o) => setSelectedAssistant(o?.key as string)} placeholder="Assistant" styles={{ dropdown: { width: 150 } }} />
               )}
-              {lastResponseTime && <span>Time: {lastResponseTime}</span>}
             </Stack>
             {!messages || messages.length < 1 ? (
               <Stack className={styles.chatEmptyState}>
@@ -868,6 +882,11 @@ const Chat = () => {
                           onCitationClicked={c => onShowCitation(c)}
                           onExectResultClicked={() => onShowExecResult(answerId)}
                         />}
+                        {answer.response_time && (
+                          <div className={styles.responseTime}>
+                            Time: {answer.response_time}
+                          </div>
+                        )}
                       </div>
                     ) : answer.role === ERROR ? (
                       <div className={styles.chatMessageError}>
