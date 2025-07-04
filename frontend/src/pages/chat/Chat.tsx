@@ -269,6 +269,7 @@ const Chat = () => {
         }
 
     let result = {} as ChatResponse
+    let responseTimeCaptured = false
     try {
       const response = await conversationApi(request, abortController.signal)
       if (response?.body) {
@@ -296,6 +297,11 @@ const Chat = () => {
                     msg.date = new Date().toISOString()
                   })
                   if (result.choices[0].messages?.some(m => m.role === ASSISTANT)) {
+                    if (!responseTimeCaptured) {
+                      const responseTime = ((Date.now() - start) / 1000).toFixed(1) + 's'
+                      assistantMessage.response_time = responseTime
+                      responseTimeCaptured = true
+                    }
                     setShowLoadingMessage(false)
                   }
                   result.choices[0].messages.forEach(resultObj => {
@@ -316,8 +322,11 @@ const Chat = () => {
             }
           })
         }
-        const responseTime = ((Date.now() - start) / 1000).toFixed(1) + 's'
-        assistantMessage.response_time = responseTime
+        if (!responseTimeCaptured) {
+          const responseTime = ((Date.now() - start) / 1000).toFixed(1) + 's'
+          assistantMessage.response_time = responseTime
+          responseTimeCaptured = true
+        }
         conversation.messages.push(toolMessage, assistantMessage)
         appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: conversation })
         setMessages([...messages, toolMessage, assistantMessage])
@@ -399,6 +408,7 @@ const Chat = () => {
     }
     let result = {} as ChatResponse
     var errorResponseMessage = 'Please try again. If the problem persists, please contact the site administrator.'
+    let responseTimeCaptured = false
     try {
       const response = conversationId
         ? await historyGenerate(request, abortController.signal, conversationId)
@@ -461,6 +471,11 @@ const Chat = () => {
                     msg.date = new Date().toISOString()
                   })
                   if (result.choices[0].messages?.some(m => m.role === ASSISTANT)) {
+                    if (!responseTimeCaptured) {
+                      const responseTime = ((Date.now() - start) / 1000).toFixed(1) + 's'
+                      assistantMessage.response_time = responseTime
+                      responseTimeCaptured = true
+                    }
                     setShowLoadingMessage(false)
                   }
                   result.choices[0].messages.forEach(resultObj => {
@@ -512,8 +527,11 @@ const Chat = () => {
           abortFuncs.current = abortFuncs.current.filter(a => a !== abortController)
           return
         }
-        const responseTime = ((Date.now() - start) / 1000).toFixed(1) + 's'
-        assistantMessage.response_time = responseTime
+        if (!responseTimeCaptured) {
+          const responseTime = ((Date.now() - start) / 1000).toFixed(1) + 's'
+          assistantMessage.response_time = responseTime
+          responseTimeCaptured = true
+        }
         appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: resultConversation })
         isEmpty(toolMessage)
           ? setMessages([...messages, assistantMessage])
