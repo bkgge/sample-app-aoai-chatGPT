@@ -5,6 +5,7 @@ import logging
 import uuid
 import httpx
 import asyncio
+import time
 from quart import (
     Blueprint,
     Quart,
@@ -571,10 +572,11 @@ async def stream_assistant_request(request_body, request_headers):
                         if part.type == "text":
                             text += part.text.value
                     if text:
+                        created_at = getattr(event.data, "created_at", int(time.time()))
                         yield {
                             "id": event.data.id,
                             "model": app_settings.azure_openai.model,
-                            "created": event.data.created_at,
+                            "created": created_at,
                             "object": event.data.object,
                             "thread_id": thread_id,
                             "choices": [{"messages": [{"role": "assistant", "content": text}]}],
