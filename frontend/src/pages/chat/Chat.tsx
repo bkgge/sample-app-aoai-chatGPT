@@ -882,11 +882,6 @@ const Chat = () => {
                           onCitationClicked={c => onShowCitation(c)}
                           onExectResultClicked={() => onShowExecResult(answerId)}
                         />}
-                        {answer.response_time && (
-                          <div className={styles.responseTime}>
-                            Time: {answer.response_time}
-                          </div>
-                        )}
                       </div>
                     ) : answer.role === ERROR ? (
                       <div className={styles.chatMessageError}>
