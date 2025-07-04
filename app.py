@@ -525,6 +525,53 @@ async def send_assistant_request(request_body, request_headers):
         raise e
 
 
+async def stream_assistant_request(request_body, request_headers):
+    messages = request_body.get("messages", [])
+    thread_id = request_body.get("thread_id")
+    assistant_id = request_body.get("assistant_id") or app_settings.azure_openai.assistant_id
+
+    user_message = messages[-1] if messages else None
+    if user_message and user_message.get("role") != "user":
+        raise ValueError("Last message must be from user")
+
+    azure_openai_client = await init_openai_client()
+
+    if not thread_id:
+        thread = await azure_openai_client.beta.threads.create()
+        thread_id = thread.id
+        logging.debug(f"Created new thread: {thread_id}")
+
+    if user_message:
+        await azure_openai_client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message["content"],
+        )
+
+    stream = await azure_openai_client.beta.threads.runs.create(
+        thread_id=thread_id,
+        assistant_id=assistant_id,
+        stream=True,
+    )
+
+    async def generate():
+        async for event in stream:
+            if hasattr(event, "model_dump"):
+                yield event.model_dump()
+            elif hasattr(event, "to_dict"):
+                yield event.to_dict()
+            else:
+                try:
+                    yield json.loads(event.json())
+                except Exception:
+                    if hasattr(event, "__dict__"):
+                        yield event.__dict__
+                    else:
+                        yield event
+
+    return generate()
+
+
 async def complete_chat_request(request_body, request_headers):
     if app_settings.base_settings.use_promptflow:
         response = await promptflow_request(request_body)
@@ -656,19 +703,22 @@ async def conversation_internal(request_body, request_headers):
         logging.debug(
             f"conversation_internal using assistant ID: {request_body.get('assistant_id') or app_settings.azure_openai.assistant_id}"
         )
-        if (
-            app_settings.azure_openai.stream
-            and not app_settings.base_settings.use_promptflow
-            and not request_body.get("assistant_id")
-        ):
+        if (request_body.get("assistant_id") or app_settings.azure_openai.assistant_id) and not app_settings.base_settings.use_promptflow:
+            result = await stream_assistant_request(request_body, request_headers)
+            response = await make_response(format_as_ndjson(result))
+            response.timeout = None
+            response.mimetype = "application/json-lines"
+            return response
+
+        if app_settings.azure_openai.stream and not app_settings.base_settings.use_promptflow:
             result = await stream_chat_request(request_body, request_headers)
             response = await make_response(format_as_ndjson(result))
             response.timeout = None
             response.mimetype = "application/json-lines"
             return response
-        else:
-            result = await complete_chat_request(request_body, request_headers)
-            return jsonify(result)
+
+        result = await complete_chat_request(request_body, request_headers)
+        return jsonify(result)
 
     except Exception as ex:
         logging.exception(ex)
