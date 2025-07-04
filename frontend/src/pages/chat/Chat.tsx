@@ -875,9 +875,10 @@ const Chat = () => {
                             answer: answer.content,
                             citations: parseCitationFromMessage(messages[index - 1]),
                             generated_chart: parsePlotFromMessage(messages[index - 1]),
-                            message_id: answer.id,
-                            feedback: answer.feedback,
-                            exec_results: execResults
+                          message_id: answer.id,
+                          feedback: answer.feedback,
+                          exec_results: execResults,
+                          response_time: answer.response_time
                           }}
                           onCitationClicked={c => onShowCitation(c)}
                           onExectResultClicked={() => onShowExecResult(answerId)}
